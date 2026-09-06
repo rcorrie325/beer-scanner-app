@@ -216,8 +216,8 @@ export function PhotoScanner() {
         {lastBarcode ? `Type it in (${lastBarcode})` : "Type it in instead"}
       </Link>
 
-      <Link href="/scan" className="block text-center text-xs text-foam/40 underline">
-        Use the live camera scanner instead
+      <Link href="/scan/live" className="block text-center text-xs text-foam/40 underline">
+        Use the live camera scanner instead (needs HTTPS)
       </Link>
     </div>
   );

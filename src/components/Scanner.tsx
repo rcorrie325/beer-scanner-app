@@ -350,7 +350,7 @@ export function Scanner() {
         {lastBarcode ? `Type it in (${lastBarcode})` : "Type it in instead"}
       </Link>
 
-      <Link href="/scan/photo" className="block text-center text-xs text-foam/40 underline">
+      <Link href="/scan" className="block text-center text-xs text-foam/40 underline">
         Photo a barcode instead (works without HTTPS)
       </Link>
     </div>
@@ -362,7 +362,9 @@ function phaseText(phase: Phase): string {
     case "checking":
       return "Checking the camera…";
     case "insecure":
-      return "Camera needs HTTPS — use manual entry. (See the README for running dev over HTTPS on a LAN.)";
+      // There's a working scanner one tap away now, so this no longer sends
+      // people to the README to set up certificates.
+      return "The live camera needs HTTPS. Photo a barcode instead — that works here.";
     case "ready":
       return "The camera stays off until you turn it on.";
     case "denied":
