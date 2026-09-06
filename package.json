@@ -10,6 +10,7 @@
     "dev": "next dev",
     "dev:https": "next dev --experimental-https",
     "dev:lan": "next dev --experimental-https --experimental-https-key certificates/lan-key.pem --experimental-https-cert certificates/lan.pem",
+    "dev:tunnel": "node scripts/tunnel.mjs",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "next lint",

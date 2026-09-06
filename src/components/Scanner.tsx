@@ -14,6 +14,10 @@ import { normalizeBarcode } from "@/lib/barcode";
  *  - Everywhere else — notably iOS Safari, which has no BarcodeDetector — we
  *    lazily import ZXing. The import only happens on the devices that need it.
  *
+ * Both engines read the entire video frame — `detect(video)` and
+ * `decodeFromStream` are handed the element, not a cropped region — so a
+ * barcode anywhere in the picture counts. The overlay is decoration only.
+ *
  * Every failure path ends at manual entry rather than at a dead end: insecure
  * context, permission denied, no camera, unsupported browser, Open Food Facts
  * being down. You can always log a drink.
@@ -278,8 +282,20 @@ export function Scanner() {
         />
 
         {live && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <div className="h-28 w-4/5 rounded-2xl border-2 border-amber-glow/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]" />
+          /*
+           * Corner marks, not a cut-out window. Both engines already decode the
+           * whole video frame, so dimming everything outside a small strip was
+           * telling people the opposite of the truth — they lined cans up with
+           * the box and waited for it to catch. These mark the live area
+           * without implying anything outside them is dead.
+           */
+          <div className="pointer-events-none absolute inset-0 p-3">
+            <div className="relative h-full w-full">
+              <span className="absolute left-0 top-0 h-9 w-9 rounded-tl-2xl border-l-2 border-t-2 border-amber-glow/60" />
+              <span className="absolute right-0 top-0 h-9 w-9 rounded-tr-2xl border-r-2 border-t-2 border-amber-glow/60" />
+              <span className="absolute bottom-0 left-0 h-9 w-9 rounded-bl-2xl border-b-2 border-l-2 border-amber-glow/60" />
+              <span className="absolute bottom-0 right-0 h-9 w-9 rounded-br-2xl border-b-2 border-r-2 border-amber-glow/60" />
+            </div>
           </div>
         )}
 
@@ -323,7 +339,7 @@ export function Scanner() {
 
       {phase === "scanning" && (
         <p className="text-center text-xs text-foam/40">
-          Point at the barcode · {engine === "native" ? "native detector" : "ZXing fallback"}
+          Anywhere in frame works · {engine === "native" ? "native detector" : "ZXing fallback"}
         </p>
       )}
 
