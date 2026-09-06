@@ -7,7 +7,14 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { lookupBarcode } from "@/lib/openfoodfacts";
 import { companyPrefixes } from "@/lib/barcode";
-import { barcodeSchema, createBeverageSchema, fail, failFromZod, type ActionResult } from "@/lib/validation";
+import {
+  barcodeSchema,
+  createBeverageSchema,
+  fail,
+  failFromZod,
+  idSchema,
+  type ActionResult,
+} from "@/lib/validation";
 
 export type ResolveBarcodeResult =
   | { status: "known"; beverageId: string; cached: boolean }
@@ -169,4 +176,96 @@ export async function createBeverageAction(
 
   revalidatePath("/", "layout");
   redirect(`/confirm/${beverageId}`);
+}
+
+/**
+ * Teaches an existing beverage the barcode that was just scanned.
+ *
+ * This is how the catalog's gaps actually get filled. Open Food Facts has no
+ * usable code for a good few well-known beers — Samuel Adams, Fat Tire, Shiner
+ * Bock — and no product database reliably does, because US beer carries no
+ * nutrition label and so never enters one. The can in someone's hand is the
+ * better source, and this is what keeps what it says.
+ *
+ * A row holds one barcode, so which of the two things happens depends on
+ * whether the target already has one:
+ *
+ *   - no barcode yet (a seeded placeholder): it takes this code directly.
+ *   - already has a different one: a sibling row is created carrying the same
+ *     details. That's the shape the catalog already uses for a beer sold in
+ *     several pack sizes — six Natural Light rows, one per code.
+ *
+ * Either way the row ends up `source: "manual"`, which is what stops the next
+ * `npm run db:seed` from refreshing the answer away or sweeping the row.
+ *
+ * What's learned is shared. `Beverage` carries no `userId` — only `DrinkLog`
+ * does — so one person teaching a barcode teaches it for everyone on the
+ * server, immediately and without them doing anything. At a party that matters:
+ * whoever opens the first case is the only one who has to identify it.
+ */
+export async function attachBarcodeAction(
+  rawBeverageId: string,
+  rawBarcode: string,
+): Promise<ActionResult<{ beverageId: string }>> {
+  const user = await getCurrentUser();
+  if (!user) redirect("/welcome");
+
+  const id = idSchema.safeParse(rawBeverageId);
+  if (!id.success) return fail("That beverage doesn't exist");
+
+  const parsedBarcode = barcodeSchema.safeParse(rawBarcode);
+  if (!parsedBarcode.success) return fail("That doesn't look like a beer barcode");
+  const barcode = parsedBarcode.data;
+
+  const target = await prisma.beverage.findUnique({
+    where: { id: id.data },
+    select: { id: true, barcode: true, name: true, brand: true, style: true, abv: true, volumeMl: true, imageUrl: true },
+  });
+  if (!target) return fail("That beverage doesn't exist");
+
+  // Somebody else may have attached this code in the meantime — on a shared
+  // phone at a party, quite possibly seconds ago. Their row wins; this just
+  // points at it rather than failing on the unique constraint.
+  const claimed = await prisma.beverage.findUnique({ where: { barcode }, select: { id: true } });
+  if (claimed) {
+    revalidatePath("/", "layout");
+    return { ok: true, data: { beverageId: claimed.id } };
+  }
+
+  try {
+    if (target.barcode === null) {
+      await prisma.beverage.update({
+        where: { id: target.id },
+        data: { barcode, source: "manual" },
+      });
+      revalidatePath("/", "layout");
+      return { ok: true, data: { beverageId: target.id } };
+    }
+
+    const sibling = await prisma.beverage.create({
+      data: {
+        barcode,
+        name: target.name,
+        brand: target.brand,
+        style: target.style,
+        abv: target.abv,
+        volumeMl: target.volumeMl,
+        imageUrl: target.imageUrl,
+        source: "manual",
+      },
+      select: { id: true },
+    });
+    revalidatePath("/", "layout");
+    return { ok: true, data: { beverageId: sibling.id } };
+  } catch (error) {
+    // Lost the race between the check above and the write.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      const existing = await prisma.beverage.findUnique({ where: { barcode }, select: { id: true } });
+      if (existing) {
+        revalidatePath("/", "layout");
+        return { ok: true, data: { beverageId: existing.id } };
+      }
+    }
+    return fail("Couldn't save that barcode");
+  }
 }

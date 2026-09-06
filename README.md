@@ -312,8 +312,20 @@ A decoded barcode is resolved in this order:
    first scan rather than the second.
 2. **Open Food Facts** — a hit is written to `Beverage` with `source: "scan"`,
    which is what makes step 1 work next time.
-3. **Manual form**, pre-filled with the barcode and, where we can work it out, a
-   guessed brand. Saved as `source: "manual"`.
+3. **"Which beer is it?"** — the catalog, searchable, with the guessed brand
+   already applied as the filter. Tapping a beer attaches the scanned code to
+   that row rather than making a second one, so the beer is scannable from then
+   on. Not listed? The form below it creates a new beverage, `source: "manual"`.
+
+Step 3 is where the catalog's gaps get filled. Open Food Facts has no usable
+code for a fair few well-known beers — Samuel Adams, Fat Tire, Shiner Bock —
+and no product database reliably does, because US beer is regulated by the TTB
+rather than the FDA, carries no nutrition label, and so never enters one. Those
+beers are seeded with a null barcode so they're at least findable by name, and
+the can in someone's hand supplies the code that a database can't.
+
+Nothing learned this way is per-user: `Beverage` has no `userId`, only
+`DrinkLog` does. One person identifying a case fixes it for the whole party.
 
 The brand guess in step 3 comes from the barcode itself. A GTIN opens with a GS1
 company prefix issued to one manufacturer, so an unknown code sharing a long

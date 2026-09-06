@@ -59,6 +59,35 @@ function toRows(catalog) {
   return [...rows.values()];
 }
 
+/**
+ * Catalog beers Open Food Facts has no usable barcode for.
+ *
+ * Without these they'd be invisible: `toRows` emits one row per barcode, so a
+ * beer with none produces nothing and the app simply doesn't have it — you
+ * couldn't scan it, and you couldn't find it by name either. A row with a null
+ * barcode makes the beer searchable with its curated ABV and style, and gives a
+ * scan somewhere to attach a real code to (see `attachBarcodeAction`), which is
+ * how the gap actually gets filled: off the can in someone's hand, which beats
+ * any product database.
+ *
+ * `barcode` is nullable and unique; SQL lets a unique index hold many nulls, so
+ * these don't collide.
+ */
+function toPlaceholders(catalog) {
+  return (catalog.entries ?? [])
+    .filter((entry) => (entry.barcodes ?? []).length === 0)
+    .map((entry) => ({
+      barcode: null,
+      name: entry.name,
+      brand: entry.brand,
+      style: entry.style,
+      abv: entry.abv,
+      volumeMl: entry.volumeMl,
+      imageUrl: null,
+      source: CATALOG_SOURCE,
+    }));
+}
+
 async function main() {
   let catalog;
   try {
@@ -104,6 +133,34 @@ async function main() {
     refreshed += result.count;
   }
 
+  // Barcode-less beers are keyed by name rather than by code, and only appear
+  // when nothing already carries that name. Once a scan attaches a real barcode
+  // the row stops being ours (source flips to "manual"), so this must not then
+  // put the placeholder back and leave the beer listed twice.
+  const placeholders = toPlaceholders(catalog);
+  const named = await prisma.beverage.findMany({
+    where: { name: { in: placeholders.map((p) => p.name) } },
+    select: { name: true, barcode: true, source: true },
+  });
+  const takenNames = new Set(named.map((b) => b.name));
+
+  const placeholdersToCreate = placeholders.filter((p) => !takenNames.has(p.name));
+  if (placeholdersToCreate.length > 0) {
+    await prisma.beverage.createMany({ data: placeholdersToCreate });
+  }
+
+  // Existing placeholders still get their curated details refreshed, the same
+  // way barcoded catalog rows do.
+  let placeholdersRefreshed = 0;
+  for (const row of placeholders) {
+    const { barcode: _ignored, ...data } = row;
+    const result = await prisma.beverage.updateMany({
+      where: { name: row.name, barcode: null, source: CATALOG_SOURCE },
+      data,
+    });
+    placeholdersRefreshed += result.count;
+  }
+
   // Rebuilding the catalog drops codes as well as adding them — a barcode whose
   // check digit turned out to be wrong, a beer reassigned to another entry.
   // Without this, every rebuild would leave its rejects behind for good.
@@ -121,10 +178,27 @@ async function main() {
     await prisma.beverage.deleteMany({ where: { id: { in: stale.map((b) => b.id) } } });
   }
 
+  // A placeholder whose beer has since gained catalog barcodes, or left the
+  // catalog entirely, is now clutter — but only removable while unused.
+  const placeholderNames = new Set(placeholders.map((p) => p.name));
+  const orphaned = await prisma.beverage.findMany({
+    where: { source: CATALOG_SOURCE, barcode: null, drinkLogs: { none: {} } },
+    select: { id: true, name: true },
+  });
+  const toDrop = orphaned.filter((b) => !placeholderNames.has(b.name));
+  if (toDrop.length > 0) {
+    await prisma.beverage.deleteMany({ where: { id: { in: toDrop.map((b) => b.id) } } });
+  }
+
   console.log(
     `Seeded ${catalog.entries?.length ?? 0} beers as ${rows.length} barcodes: ` +
       `${toCreate.length} added, ${refreshed} refreshed, ${stale.length} stale removed, ` +
       `${userOwned} left alone (user-owned).`,
+  );
+  console.log(
+    `Barcode-less beers: ${placeholdersToCreate.length} added, ` +
+      `${placeholdersRefreshed} refreshed, ${toDrop.length} removed. ` +
+      `Searchable now; a scan can attach a real code.`,
   );
 }
 
