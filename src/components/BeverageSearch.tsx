@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { attachBarcodeAction } from "@/actions/beverages";
 import { beverageMeta } from "@/lib/format";
 import type { BeverageListItem } from "@/lib/queries";
 
@@ -10,11 +12,26 @@ import type { BeverageListItem } from "@/lib/queries";
  * seeded catalog of common beers, so at a party you mostly just tap the beer
  * you had ten minutes ago — and the one you're holding is usually there even on
  * the first night.
+ *
+ * Given `attachBarcode`, tapping a result means "that scan was this beer"
+ * rather than "log this beer": the code is written onto the row before the
+ * confirm screen opens, so the next person to scan that can gets a match. It's
+ * the same list either way — the difference is only what the tap means.
  */
-export function BeverageSearch({ initial }: { initial: BeverageListItem[] }) {
+export function BeverageSearch({
+  initial,
+  attachBarcode,
+}: {
+  initial: BeverageListItem[];
+  /** A just-scanned code with no home yet. */
+  attachBarcode?: string;
+}) {
+  const router = useRouter();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<BeverageListItem[]>(initial);
   const [loading, setLoading] = useState(false);
+  const [attaching, startAttach] = useTransition();
+  const [attachError, setAttachError] = useState<string | null>(null);
 
   useEffect(() => {
     if (query.trim() === "") {
@@ -68,24 +85,57 @@ export function BeverageSearch({ initial }: { initial: BeverageListItem[] }) {
             const meta = beverageMeta(beverage);
             return (
               <li key={beverage.id}>
-                <Link
-                  href={`/confirm/${beverage.id}`}
-                  className="flex items-center gap-3 rounded-2xl border border-night-800 bg-night-900 px-3 py-2.5 active:scale-[0.99]"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{beverage.name}</p>
-                    <p className="truncate text-xs text-foam/50">
-                      {[beverage.brand, meta].filter(Boolean).join(" · ") || "—"}
-                    </p>
-                  </div>
-                  <span className="shrink-0 text-xs text-foam/40">
-                    {beverage.logCount > 0 ? `${beverage.logCount} logged` : "not yet"}
-                  </span>
-                </Link>
+                {attachBarcode ? (
+                  <button
+                    type="button"
+                    disabled={attaching}
+                    onClick={() =>
+                      startAttach(async () => {
+                        setAttachError(null);
+                        const result = await attachBarcodeAction(beverage.id, attachBarcode);
+                        if (!result.ok) {
+                          setAttachError(result.error);
+                          return;
+                        }
+                        router.push(`/confirm/${result.data.beverageId}`);
+                      })
+                    }
+                    className="flex w-full items-center gap-3 rounded-2xl border border-night-800 bg-night-900 px-3 py-2.5 text-left active:scale-[0.99] disabled:opacity-50"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium">{beverage.name}</p>
+                      <p className="truncate text-xs text-foam/50">
+                        {[beverage.brand, meta].filter(Boolean).join(" · ") || "—"}
+                      </p>
+                    </div>
+                    <span className="shrink-0 text-xs text-amber-glow/70">this one</span>
+                  </button>
+                ) : (
+                  <Link
+                    href={`/confirm/${beverage.id}`}
+                    className="flex items-center gap-3 rounded-2xl border border-night-800 bg-night-900 px-3 py-2.5 active:scale-[0.99]"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium">{beverage.name}</p>
+                      <p className="truncate text-xs text-foam/50">
+                        {[beverage.brand, meta].filter(Boolean).join(" · ") || "—"}
+                      </p>
+                    </div>
+                    <span className="shrink-0 text-xs text-foam/40">
+                      {beverage.logCount > 0 ? `${beverage.logCount} logged` : "not yet"}
+                    </span>
+                  </Link>
+                )}
               </li>
             );
           })}
         </ul>
+      )}
+
+      {attachError && (
+        <p role="alert" className="rounded-2xl border border-amber-deep/60 bg-night-900 px-4 py-3 text-sm text-amber-glow">
+          {attachError}
+        </p>
       )}
     </div>
   );
