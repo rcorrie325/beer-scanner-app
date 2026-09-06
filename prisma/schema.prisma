@@ -1,0 +1,64 @@
+// Beer Scanner App — data model.
+//
+// PORTING TO POSTGRES: change `provider` below from "sqlite" to "postgresql"
+// and point DATABASE_URL at your Postgres instance. Nothing else in this file
+// (or in application code) needs to change — no SQLite-only types, no native
+// enums, no `@db.*` attributes are used.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String   @id @default(cuid())
+  displayName String   @unique
+  createdAt   DateTime @default(now())
+
+  drinkLogs DrinkLog[]
+}
+
+model Beverage {
+  id        String   @id @default(cuid())
+  /// EAN-13 / EAN-8 / UPC-A. Null for beverages added by hand with no barcode.
+  barcode   String?  @unique
+  name      String
+  brand     String?
+  /// Free text: "IPA", "Lager", "Stout", ...
+  style     String?
+  /// Percent alcohol by volume, e.g. 5.2. Null when unknown — never defaulted.
+  abv       Float?
+  /// Serving size in millilitres. Null when unknown — never defaulted.
+  volumeMl  Int?
+  imageUrl  String?
+  /// "scan" (came from an Open Food Facts lookup), "manual" (typed by a user)
+  /// or "catalog" (pre-loaded from prisma/beer-catalog.json by the seed).
+  /// Only "catalog" rows may be overwritten by re-seeding.
+  source    String
+  createdAt DateTime @default(now())
+
+  drinkLogs DrinkLog[]
+
+  @@index([name])
+}
+
+model DrinkLog {
+  id         String    @id @default(cuid())
+  userId     String
+  beverageId String
+  quantity   Int       @default(1)
+  loggedAt   DateTime  @default(now())
+  /// Soft delete: non-null means the row is excluded from every count.
+  deletedAt  DateTime?
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  beverage Beverage @relation(fields: [beverageId], references: [id], onDelete: Cascade)
+
+  @@index([userId, loggedAt])
+  @@index([beverageId])
+  @@index([deletedAt])
+}

@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+@theme {
+  --color-night-950: #0b0a09;
+  --color-night-900: #16130f;
+  --color-night-800: #211c16;
+  --color-night-700: #2f2820;
+  --color-night-600: #453b2f;
+
+  --color-amber-glow: #f4b740;
+  --color-amber-deep: #b8791b;
+  --color-foam: #f7f1e3;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--color-night-950);
+  color: var(--color-foam);
+  -webkit-tap-highlight-color: transparent;
+  /* A phone held one-handed at a party: never let a stray swipe scroll sideways. */
+  overflow-x: hidden;
+}
+
+/* Respect the notch and the home indicator. */
+.safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+@layer utilities {
+  /* Minimum comfortable thumb target. */
+  .tap {
+    min-height: 3rem;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(0.75rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-rise {
+  animation: rise 220ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-rise {
+    animation: none;
+  }
+}
