@@ -21,7 +21,44 @@ import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { CATALOG } from "./beer-catalog.source.mjs";
-import { roundAbv, slugifyBrand, toCatalogCode } from "./catalog-matching.mjs";
+import {
+  hasValidCheckDigit,
+  normalizeBarcode,
+  roundAbv,
+  slugifyBrand,
+  toCatalogCode,
+} from "./catalog-matching.mjs";
+
+/**
+ * Codes listed as `verifiedBarcodes` on a source entry.
+ *
+ * The source file's rule is that it holds facts about the beer and never
+ * barcodes, because a guessed GTIN silently attaches the wrong drink. A number
+ * read off a can in your hand isn't a guess, though, and some beers — Natural
+ * Light among them — simply aren't in Open Food Facts with a usable code. This
+ * is the narrow exception: hand-checked codes, still put through the same check
+ * digit and length rules as anything OFF hands us, so a typo can't get in.
+ *
+ * ABV and volume deliberately come from the entry rather than being given per
+ * code. OFF supplies those per barcode because they vary by market; a code you
+ * typed in is for the can you were holding, which is the entry's own serving.
+ */
+function verifiedCodesFor(entry) {
+  const codes = [];
+  for (const raw of entry.verifiedBarcodes ?? []) {
+    const barcode = normalizeBarcode(String(raw));
+    if (!barcode) {
+      process.stderr.write(`  ! ${entry.name}: "${raw}" isn't a usable GTIN — skipped\n`);
+      continue;
+    }
+    if (!hasValidCheckDigit(barcode)) {
+      process.stderr.write(`  ! ${entry.name}: ${barcode} fails its check digit — skipped\n`);
+      continue;
+    }
+    codes.push({ barcode, abv: entry.abv, volumeMl: entry.volumeMl, imageUrl: null });
+  }
+  return codes;
+}
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const OUT_PATH = path.join(HERE, "..", "prisma", "beer-catalog.json");
@@ -198,8 +235,15 @@ for (const [slug, entries] of byBrand) {
       .slice(0, MAX_BARCODES_PER_BEER);
 
     // A brand whose fetch failed keeps its previous codes untouched.
-    const codes =
+    const discovered =
       failed || fresh.length === 0 ? (previousByName.get(entry.name)?.barcodes ?? []) : fresh;
+
+    // Codes a human read off a physical can outrank anything found by search,
+    // and survive a brand OFF has nothing usable for. They're deduped against
+    // the discovered set so a code that later shows up in OFF doesn't double.
+    const verified = verifiedCodesFor(entry);
+    const seen = new Set(verified.map((c) => c.barcode));
+    const codes = [...verified, ...discovered.filter((c) => !seen.has(c.barcode))];
     kept += codes.length;
 
     results.push({

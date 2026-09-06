@@ -21,6 +21,20 @@
  *              fallback when OFF has none — OFF's per-barcode value wins when
  *              present, because ABV varies by market for the same brand.
  *   volumeMl   Fallback serving size when OFF's quantity field is unparseable.
+ *   verifiedBarcodes
+ *              GTINs for beers Open Food Facts doesn't have. The rule above —
+ *              this file holds facts, never barcodes — exists to stop *guessing*
+ *              a code, because a wrong one silently attaches the wrong drink and
+ *              the wrong ABV to somebody's scan. A number read off a can, or off
+ *              a retailer's own product listing, isn't a guess. Codes here still
+ *              go through the same length and check-digit rules as anything OFF
+ *              returns, so a typo can't get in, and they're merged ahead of
+ *              discovered codes rather than replacing them.
+ *
+ *              Only add one you can point at a source for, and say where in a
+ *              trailing comment. A GS1 company prefix is *not* a source: it
+ *              identifies the brewery, and Anheuser-Busch's covers Bud Light,
+ *              Busch and Michelob too.
  *
  * Alcohol-free variants are deliberately absent: the app treats 0% as "no data"
  * rather than "no alcohol", so a seeded 0.0 row would read as a broken entry.
@@ -58,7 +72,30 @@ export const CATALOG = [
   { brand: "Miller", offBrand: "miller", name: "Miller Lite", keywords: ["lite"], style: "Lager", abv: 4.2, volumeMl: 355 },
   { brand: "Miller", offBrand: "miller", name: "Miller High Life", keywords: ["high life"], style: "Lager", abv: 4.6, volumeMl: 355 },
   { brand: "Busch", offBrand: "busch", name: "Busch Light", keywords: ["busch", "light"], style: "Lager", abv: 4.1, volumeMl: 355 },
-  { brand: "Natural Light", offBrand: "natural-light", name: "Natural Light", keywords: ["natural light"], style: "Lager", abv: 4.2, volumeMl: 355 },
+  // Open Food Facts has no usable code for this one: the two it files under
+  // "Natural Light Beer" both fail their check digit, and the one valid GTIN
+  // tagged to the brand ("Beer 355ml can", 0018200250026) sits seven digits
+  // from a confirmed Bud Light on the shared Anheuser-Busch prefix, so it
+  // proves the brewery and not the beer. These are retailer-listed instead —
+  // see `verifiedBarcodes` in the field notes above. All multipack codes;
+  // scanning a case logs one serving, and the confirm screen sets the count.
+  {
+    brand: "Natural Light",
+    offBrand: "natural-light",
+    name: "Natural Light",
+    keywords: ["natural light"],
+    style: "Lager",
+    abv: 4.2,
+    volumeMl: 355,
+    verifiedBarcodes: [
+      "018200152184", // 18pk cans — Harris Teeter, Dollar General, Target, Yankee Spirits
+      "018200009303", // 12pk bottles — Harris Teeter
+      "018200150302", // 30pk cans — Go-UPC
+      "018200200779", // "Natty Pack" — Go-UPC
+      "018200150470", // 12pk cans — UPCitemdb
+      "018200009495", // 6pk bottles — UPCitemdb
+    ],
+  },
   { brand: "Pabst", offBrand: "pabst", name: "Pabst Blue Ribbon", keywords: ["blue ribbon"], style: "Lager", abv: 4.7, volumeMl: 355 },
   // OFF files this simply as "Yuengling" — the word "Lager" never appears.
   { brand: "Yuengling", name: "Yuengling Traditional Lager", keywords: ["yuengling"], exclude: ["flight", "light"], style: "Amber", abv: 4.5, volumeMl: 355 },
