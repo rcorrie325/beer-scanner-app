@@ -349,6 +349,10 @@ export function Scanner() {
       >
         {lastBarcode ? `Type it in (${lastBarcode})` : "Type it in instead"}
       </Link>
+
+      <Link href="/scan/photo" className="block text-center text-xs text-foam/40 underline">
+        Photo a barcode instead (works without HTTPS)
+      </Link>
     </div>
   );
 }
