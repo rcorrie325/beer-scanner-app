@@ -95,15 +95,37 @@ address is the whole setup.
 
 ### Getting the scanner working on phones
 
-**Why this is fiddly:** browsers only hand out the camera in a *secure context*.
-`localhost` counts as one even over HTTP, which is why the laptop just works. A
-LAN address like `http://192.168.15.174:3000` does not — `navigator.mediaDevices`
-isn't merely blocked there, it doesn't exist. The app detects this and shows
-*"Camera needs HTTPS — use manual entry"* rather than a dead video box.
+**Start the server and open your LAN address on the phone. That's it.**
 
-So the phones need to reach the dev server over **HTTPS, at your LAN IP, with a
-certificate they trust**. That's three things, and the shortcut only does one of
-them:
+```bash
+npm run dev
+```
+
+```bash
+ipconfig getifaddr en0
+```
+
+Open `http://<that address>:3000` on the phone, tap *Take a photo*. No
+certificate, no tunnel, nothing to install — `/scan` hands the job to the
+phone's own camera app and decodes the picture on the server. The rest of this
+section is only needed for the **live** scanner at `/scan/live`.
+
+#### Why the live scanner needs more
+
+Browsers only hand out the camera in a *secure context*. `localhost` counts as
+one even over HTTP, which is why the laptop just works. A LAN address like
+`http://192.168.15.174:3000` does not — `navigator.mediaDevices` isn't merely
+blocked there, it doesn't exist.
+
+A file input has no such rule, which is the whole reason the photo scanner is
+the default: it is the one that works on the network you actually have. The
+live scanner is worth the setup only if you want the instant read of a video
+stream — it gets several frames a second and needs just one to be sharp, where
+a photo is a single attempt that a blurry shot wastes.
+
+If you want it, the phones need to reach the dev server over **HTTPS, at your
+LAN IP, with a certificate they trust**. That's three things, and the shortcut
+only does one of them:
 
 > `npm run dev:https` (i.e. `next dev --experimental-https`) issues a
 > certificate for `localhost`, `127.0.0.1` and `::1` **only**. Phones hitting
@@ -178,7 +200,7 @@ The scanner names its own failure on screen. Match the message:
 
 | On screen | What's wrong | Fix |
 | --- | --- | --- |
-| *"Camera needs HTTPS"* | The phone is on `http://`, or on the laptop's `localhost` | Use `https://<your-lan-ip>:3000` |
+| *"The live camera needs HTTPS"* | The phone is on `http://` | Go back to `/scan` and photo it, or finish the certificate steps above |
 | Certificate / "Not Private" warning | The phone doesn't trust your CA | Step 6 — on iOS, check you did **both** halves |
 | Page won't load at all | Not the certificate | Same wifi? Guest networks isolate clients. Also check the macOS firewall isn't blocking incoming connections for Node |
 | *"Camera permission denied"* | You dismissed the prompt | Allow it in the browser's site settings, then *Try again* |
@@ -229,7 +251,8 @@ and beverage search) filter in application code instead of SQL.
 | --- | --- |
 | `/welcome` | Name entry / user picker |
 | `/` | Today + all-time counts, big scan button, recent drinks with `+1` and undo |
-| `/scan` | Camera preview with a manual escape hatch |
+| `/scan` | Photograph a barcode; the server decodes it. The default, and the only one that works without HTTPS |
+| `/scan/live` | Live camera preview, for when you have a secure context |
 | `/confirm/[id]` | Beverage details, quantity stepper, Save |
 | `/add` | Searchable list of known beverages + new-beverage form |
 | `/leaderboard` | Everyone ranked, filterable by today / week / all time |
@@ -247,11 +270,36 @@ There is no password reset, no OAuth and no session expiry, by design.
 
 ### Barcode scanning
 
-Two engines, picked at runtime:
+Two scanners, and the default is the photo one.
+
+**`/scan` — photograph it.** The phone's own camera app takes the picture, the
+browser shrinks it to 1600px (which also turns an iPhone's HEIC into a JPEG),
+and the server decodes it: zbar first, ZXing as a second attempt on anything it
+misses. Every phone gets the same reader this way, and because a file input
+isn't gated on a secure context, it works over plain HTTP — no certificate, no
+tunnel. zbar is unfussy enough to read a barcode sideways, or at a couple of
+pixels per bar.
+
+zbar has to sit in `serverExternalPackages`; bundling mangles its WebAssembly
+loader into a `t is not a function` that surfaces as "no barcode here" rather
+than as a build error.
+
+**`/scan/live` — watch it.** Two engines picked at runtime:
 
 - **`BarcodeDetector`** (Chrome/Android) — native, no bundle cost.
 - **ZXing**, lazily imported, everywhere else. iOS Safari has no
-  `BarcodeDetector`, so this is the path most phones at a party will take.
+  `BarcodeDetector`.
+
+Both read the whole video frame, not a cropped region, so a barcode anywhere in
+the picture counts — the corner marks on screen are decoration.
+
+The trade between them is frames. The live scanner gets several a second and
+needs only one to be sharp; a photo is a single attempt, and a blurry one is a
+failure you have to notice and repeat. That's the cost of not needing a
+certificate.
+
+Either way the result goes through the same `resolveBarcodeAction`, so the two
+can't drift apart or create competing rows for one tin.
 
 EAN-13, EAN-8 and UPC-A are supported. UPC-A is normalised to its EAN-13 form
 (leading zero) so the same bottle can't become two rows.
